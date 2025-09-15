@@ -91,6 +91,14 @@ jobs:
 
               cd ..
             done
+
+            while IFS= read -r pkg; do
+              [ -z "$pkg" ] && continue
+              [[ "$pkg" =~ ^# ]] && continue
+
+              echo "Installing package: $pkg"
+              sudo -Eu builder ./void-packages/xbps-src pkg -Q "$pkg"
+            done < extras.txt
             
             sudo -Eu builder mv $(pwd)/void-packages/hostdir/binpkgs/* ${REPOSITORY_DIR}
             
