@@ -126,12 +126,9 @@ jobs:
         if: steps.detect.outputs.has_changes == 'true'
         run: |
             export REPOSITORY_DIR="repository-${{ matrix.config.arch }}"
-            changes=${{ steps.detect.outputs.changes }}
             mkdir -p artifacts
-            cp ${REPOSITORY_DIR}/*-repodata artifacts || true
-            for pkgpath in ${changes}; do
-              pkgname=$(basename $(dirname "$pkgpath"))
-              cp -r $(pwd)/${REPOSITORY_DIR}/$pkgname-* $(pwd)/artifacts/ || true
+            for pkg in ${REPOSITORY_DIR}; do
+              cp -r $(pwd)/${REPOSITORY_DIR}/$pkg $(pwd)/artifacts/ || true
             done
 
       - name: Upload changed packages
