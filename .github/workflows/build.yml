@@ -42,9 +42,13 @@ jobs:
         run: |
           chown -R builder:builder .
 
-          BASE_SHA="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            changes=$(find void-packages/srcpkgs -name template | sed 's|^./||')
+          else
+            BASE_SHA="${{ github.event.before }}"
 
-          changes=$(git diff --name-only $BASE_SHA...HEAD | grep '/template$' || true)
+            changes=$(git diff --name-only $BASE_SHA...HEAD | grep '/template$' || true)
+          fi  
 
           if [ -z "$changes" ]; then
             echo "No template changes, skipping."
@@ -108,6 +112,7 @@ jobs:
             export REPOSITORY_DIR="repository-${{ matrix.config.arch }}"
             changes=${{ steps.detect.outputs.changes }}
             mkdir -p artifacts
+            cp ${REPOSITORY_DIR}/*-repodata artifacts || true
             for pkgpath in ${changes}; do
               pkgname=$(basename $(dirname "$pkgpath"))
               cp -r $(pwd)/${REPOSITORY_DIR}/$pkgname-* $(pwd)/artifacts/ || true
