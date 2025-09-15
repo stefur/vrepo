@@ -1,7 +1,7 @@
 # Template file for 'quarto'
 pkgname=quarto
 version=1.8.24
-revision=2
+revision=1
 archs="x86_64"
 create_wrksrc=yes
 short_desc="Technical publishing system built on Pandoc"
