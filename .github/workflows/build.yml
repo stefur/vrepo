@@ -96,15 +96,18 @@ jobs:
 
           echo -n "${{ secrets.SIGNING_KEY }}" > private.pem
 
-          xbps-rindex -a ${REPOSITORY_DIR}/*.xbps
-          xbps-rindex --sign \
-            --signedby "${{ github.repository_owner }} <${{ github.event.pusher.email }}>" \
-            --privkey private.pem \
-            ${REPOSITORY_DIR}
-
-          for pkg in $(ls -d -1 ${REPOSITORY_DIR}/*.xbps); do
-            xbps-rindex --privkey private.pem --sign-pkg ${pkg}
-          done
+          if ls ${REPOSITORY_DIR}/*.xbps >/dev/null 2>&1; then
+            xbps-rindex -a ${REPOSITORY_DIR}/*.xbps
+            xbps-rindex --sign \
+              --signedby "stefur <stefan@furne.net>" \
+              --privkey private.pem \
+              ${REPOSITORY_DIR}
+            for pkg in ${REPOSITORY_DIR}/*.xbps; do
+              xbps-rindex --privkey private.pem --sign-pkg "$pkg"
+            done
+          else
+            echo "No .xbps packages found in ${REPOSITORY_DIR}, skipping indexing."
+          fi
 
       - name: Prepare artifacts
         if: steps.detect.outputs.has_changes == 'true'
