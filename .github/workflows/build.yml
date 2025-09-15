@@ -43,7 +43,7 @@ jobs:
           chown -R builder:builder .
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            changes=$(find void-packages/srcpkgs -name template | sed 's|^./||')
+            changes=$(find templates -maxdepth 2 -mindepth 2 -type f -name template | sort)
           else
             BASE_SHA="${{ github.event.before }}"
 
