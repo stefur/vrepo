@@ -1,0 +1,179 @@
+name: Package Builder
+
+on:
+  push:
+    branches: ["main", "dev"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    container:
+      image: ghcr.io/void-linux/void-glibc-full:20250901R1
+      options: --platform ${{ matrix.config.platform }} --privileged
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - arch: x86_64
+            platform: linux/amd64
+
+    steps:
+      - name: Prepare container
+        run: |
+          xbps-install -Syu xbps && xbps-install -yu && xbps-install -y bash curl git sudo xtools
+
+          useradd -G xbuilder -M builder
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+          fetch-depth: 0
+
+      - name: Init submodules shallowly
+        run: |
+          git config --global --add safe.directory $(pwd)
+          git submodule update --init --recursive --depth 1
+
+      - name: Detect changed templates
+        id: detect
+        run: |
+          chown -R builder:builder .
+
+          BASE_SHA="${{ github.event.before }}"
+
+          changes=$(git diff --name-only $BASE_SHA...HEAD | grep '/template$' || true)
+
+          if [ -z "$changes" ]; then
+            echo "No template changes, skipping."
+            exit 0
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "changes=$changes" >> $GITHUB_OUTPUT
+          fi
+      - name: Build packages
+        if: steps.detect.outputs.has_changes == 'true'
+        run: |        
+            changes=${{ steps.detect.outputs.changes }}
+            
+            echo XBPS_ALLOW_RESTRICTED=yes >> void-packages/etc/conf
+            echo XBPS_CHROOT_CMD=uchroot >> void-packages/etc/conf
+
+            export REPOSITORY_DIR="repository-${{ matrix.config.arch }}"
+            
+            sudo -Eu builder mkdir -p ${REPOSITORY_DIR}
+            
+            sudo -Eu builder ./void-packages/xbps-src binary-bootstrap
+
+            for pkgpath in ${changes}; do
+              pkgname=$(basename $(dirname "$pkgpath"))
+              srcfile=$(pwd)/$pkgpath
+              destdir=$(pwd)/void-packages/srcpkgs/$pkgname
+
+              sudo -Eu builder mkdir -p "$destdir"
+              sudo -Eu builder cp "$srcfile" "$destdir/template"
+  
+              cd void-packages
+
+              sudo -Eu builder xlint "$pkgname" || exit 1
+              sudo -Eu builder ./xbps-src pkg -Q "$pkgname" || exit 1
+
+              cd ..
+            done
+            
+            sudo -Eu builder mv $(pwd)/void-packages/hostdir/binpkgs/* ${REPOSITORY_DIR}
+            
+      - name: Sign repository and packages
+        if: steps.detect.outputs.has_changes == 'true'
+        run: |
+          export REPOSITORY_DIR="repository-${{ matrix.config.arch }}"
+
+          echo -n "${{ secrets.SIGNING_KEY }}" > private.pem
+
+          xbps-rindex -a ${REPOSITORY_DIR}/*.xbps
+          xbps-rindex --sign \
+            --signedby "${{ github.repository_owner }} <${{ github.event.pusher.email }}>" \
+            --privkey private.pem \
+            ${REPOSITORY_DIR}
+
+          for pkg in $(ls -d -1 ${REPOSITORY_DIR}/*.xbps); do
+            xbps-rindex --privkey private.pem --sign-pkg ${pkg}
+          done
+
+      - name: Prepare artifacts
+        if: steps.detect.outputs.has_changes == 'true'
+        run: |
+            export REPOSITORY_DIR="repository-${{ matrix.config.arch }}"
+            changes=${{ steps.detect.outputs.changes }}
+            mkdir -p artifacts
+            for pkgpath in ${changes}; do
+              pkgname=$(basename $(dirname "$pkgpath"))
+              cp -r $(pwd)/${REPOSITORY_DIR}/$pkgname-* $(pwd)/artifacts/ || true
+            done
+
+      - name: Upload changed packages
+        if: steps.detect.outputs.has_changes == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: "repository-${{ matrix.config.arch }}"
+          path: artifacts/          
+
+  merge:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+          fetch-depth: 0
+
+      - name: Init submodules shallowly
+        run: |
+          git config --global --add safe.directory $(pwd)
+          git submodule update --init --recursive --depth 1
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Merge artifacts
+        run: |
+          mkdir -p repository
+          for arch_dir in repository-*; do
+            for pkg in $arch_dir/*; do
+              pkgname=$(basename "$pkg")
+              dest="repository/$pkgname"
+              mkdir -p "$(dirname "$dest")"
+              mv "$pkg" "$dest"
+            done
+          done
+
+      - name: Generate directory listing
+        uses: jayanta525/github-pages-directory-listing@v4.0.0
+        with:
+          folder: repository
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: repository
+
+  deploy:
+    needs: merge
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+         
+    
