@@ -1,0 +1,22 @@
+# Template file for 'quarto'
+pkgname=quarto
+version=1.8.24
+revision=2
+archs="x86_64"
+create_wrksrc=yes
+short_desc="Technical publishing system built on Pandoc"
+maintainer="stefur <stefan@furne.net>"
+license="MIT"
+homepage="https://github.com/quarto-dev/quarto-cli"
+distfiles="https://github.com/quarto-dev/quarto-cli/releases/download/v${version}/quarto-${version}-linux-amd64.tar.gz"
+checksum="6b83c1c9b6f2ce6454798b42260bd2ee184551d74debe817b8aaf28b09ac22d0"
+
+do_install() {
+	vmkdir usr/lib/quarto
+	vmkdir usr/bin
+	vlicense "${wrksrc}/quarto-${version}"/share/COPYRIGHT
+
+	cp -r "${wrksrc}/quarto-${version}"/* "${DESTDIR}/usr/lib/quarto/"
+
+	ln -s "/usr/lib/quarto/bin/quarto" "${DESTDIR}/usr/bin/quarto"
+}
