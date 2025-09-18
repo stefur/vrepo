@@ -73,8 +73,8 @@ jobs:
               sudo -Eu builder ./void-packages/xbps-src pkg -Q "$pkg"
             done < extras.txt
             
-            sudo -Eu builder mv $(pwd)/void-packages/hostdir/binpkgs/* ${REPOSITORY_DIR}
-            
+            sudo -Eu builder find $(pwd)/void-packages/hostdir/binpkgs -type f -name '*.xbps' -exec mv {} ${REPOSITORY_DIR}/ \;
+
       - name: Sign repository and packages
         run: |
           echo -n "${{ secrets.SIGNING_KEY }}" > private.pem
