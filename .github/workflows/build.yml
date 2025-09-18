@@ -2,12 +2,15 @@ name: Package Builder
 
 on:
   push:
-    branches: ["main", "dev"]
   workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * *"
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      REPOSITORY_DIR: repository-${{ matrix.config.arch }}
 
     container:
       image: ghcr.io/void-linux/void-glibc-full:20250901R1
@@ -37,58 +40,28 @@ jobs:
           git config --global --add safe.directory $(pwd)
           git submodule update --init --recursive --depth 1
 
-      - name: Detect changed templates
-        id: detect
-        run: |
-          chown -R builder:builder .
-
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            changes=$(find templates -maxdepth 2 -mindepth 2 -type f -name template | sort)
-          else
-            BASE_SHA="${{ github.event.before }}"
-
-            changes=$(git diff --name-only $BASE_SHA...HEAD | grep '/template$' || true)
-          fi  
-
-          if [ -z "$changes" ]; then
-            echo "No template changes, skipping."
-            exit 0
-          else
-            echo "has_changes=true" >> $GITHUB_OUTPUT
-            {
-              echo "changes<<EOF"
-              echo "$changes"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-
-          fi
       - name: Build packages
-        if: steps.detect.outputs.has_changes == 'true'
-        run: |        
-            changes=${{ steps.detect.outputs.changes }}
-            
+        run: |          
             echo XBPS_ALLOW_RESTRICTED=yes >> void-packages/etc/conf
             echo XBPS_CHROOT_CMD=uchroot >> void-packages/etc/conf
-
-            export REPOSITORY_DIR="repository-${{ matrix.config.arch }}"
             
             sudo -Eu builder mkdir -p ${REPOSITORY_DIR}
             
             sudo -Eu builder ./void-packages/xbps-src binary-bootstrap
 
-            for pkgpath in ${changes}; do
-              pkgname=$(basename $(dirname "$pkgpath"))
-              srcfile=$(pwd)/$pkgpath
-              destdir=$(pwd)/void-packages/srcpkgs/$pkgname
+            for pkgdir in pkgs/*; do
+              pkg=$(basename "$pkgdir")
+              srcfile="$pkgdir/template"
+              destdir="$(pwd)/void-packages/srcpkgs/$pkg"
+
+              echo "Building package: $pkg"
 
               sudo -Eu builder mkdir -p "$destdir"
               sudo -Eu builder cp "$srcfile" "$destdir/template"
-  
+
               cd void-packages
-
-              sudo -Eu builder xlint "$pkgname" || exit 1
-              sudo -Eu builder ./xbps-src pkg -Q "$pkgname" || exit 1
-
+              sudo -Eu builder xlint "$pkg" || exit 1
+              sudo -Eu builder ./xbps-src pkg -Q "$pkg" || exit 1
               cd ..
             done
 
@@ -96,17 +69,14 @@ jobs:
               [ -z "$pkg" ] && continue
               [[ "$pkg" =~ ^# ]] && continue
 
-              echo "Installing package: $pkg"
+              echo "Building package: $pkg"
               sudo -Eu builder ./void-packages/xbps-src pkg -Q "$pkg"
             done < extras.txt
             
             sudo -Eu builder mv $(pwd)/void-packages/hostdir/binpkgs/* ${REPOSITORY_DIR}
             
       - name: Sign repository and packages
-        if: steps.detect.outputs.has_changes == 'true'
         run: |
-          export REPOSITORY_DIR="repository-${{ matrix.config.arch }}"
-
           echo -n "${{ secrets.SIGNING_KEY }}" > private.pem
 
           if ls ${REPOSITORY_DIR}/*.xbps >/dev/null 2>&1; then
@@ -123,18 +93,15 @@ jobs:
           fi
 
       - name: Prepare artifacts
-        if: steps.detect.outputs.has_changes == 'true'
         run: |
-            export REPOSITORY_DIR="repository-${{ matrix.config.arch }}"
             mkdir -p artifacts
             cp -r $(pwd)/${REPOSITORY_DIR}/* $(pwd)/artifacts/ || true
 
       - name: Upload changed packages
-        if: steps.detect.outputs.has_changes == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: "repository-${{ matrix.config.arch }}"
-          path: artifacts/          
+          name: ${{ env.REPOSITORY_DIR }}
+          path: artifacts/    
 
   merge:
     runs-on: ubuntu-latest
