@@ -50,21 +50,21 @@ jobs:
           sudo -Eu builder ./void-packages/xbps-src binary-bootstrap
 
           for pkgdir in pkgs/*; do
+            [ -d "$pkgdir" ] || continue
             pkg=$(basename "$pkgdir")
-            srcfile="$pkgdir/template"
             destdir="$(pwd)/void-packages/srcpkgs/$pkg"
 
             echo "Building package: $pkg"
 
-            sudo -Eu builder mkdir -p "$destdir"
-            sudo -Eu builder cp "$srcfile" "$destdir/template"
+            sudo -Eu builder rm -rf "$destdir"
+            sudo -Eu builder cp -r "$pkgdir" "$destdir"
 
             cd void-packages
             sudo -Eu builder xlint "$pkg" || exit 1
             sudo -Eu builder ./xbps-src pkg -Q "$pkg" || exit 1
             cd ..
           done
-
+          
           while IFS= read -r pkg; do
             [ -z "$pkg" ] && continue
             [[ "$pkg" =~ ^# ]] && continue
