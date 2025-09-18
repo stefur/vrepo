@@ -44,7 +44,7 @@ jobs:
         run: |          
             echo XBPS_ALLOW_RESTRICTED=yes >> void-packages/etc/conf
             echo XBPS_CHROOT_CMD=uchroot >> void-packages/etc/conf
-            
+            chown -R builder:builder .
             sudo -Eu builder mkdir -p ${REPOSITORY_DIR}
             
             sudo -Eu builder ./void-packages/xbps-src binary-bootstrap
