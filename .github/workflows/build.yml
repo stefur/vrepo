@@ -41,67 +41,63 @@ jobs:
           git submodule update --init --recursive --depth 1
 
       - name: Build packages
-        run: |          
-            echo XBPS_ALLOW_RESTRICTED=yes >> void-packages/etc/conf
-            echo XBPS_CHROOT_CMD=uchroot >> void-packages/etc/conf
-            chown -R builder:builder .
-            sudo -Eu builder mkdir -p ${REPOSITORY_DIR}
-            
-            sudo -Eu builder ./void-packages/xbps-src binary-bootstrap
+        run: |
+          echo XBPS_ALLOW_RESTRICTED=yes >> void-packages/etc/conf
+          echo XBPS_CHROOT_CMD=uchroot >> void-packages/etc/conf
+          chown -R builder:builder .
+          sudo -Eu builder mkdir -p ${REPOSITORY_DIR}
 
-            for pkgdir in pkgs/*; do
-              pkg=$(basename "$pkgdir")
-              srcfile="$pkgdir/template"
-              destdir="$(pwd)/void-packages/srcpkgs/$pkg"
+          sudo -Eu builder ./void-packages/xbps-src binary-bootstrap
 
-              echo "Building package: $pkg"
+          for pkgdir in pkgs/*; do
+            pkg=$(basename "$pkgdir")
+            srcfile="$pkgdir/template"
+            destdir="$(pwd)/void-packages/srcpkgs/$pkg"
 
-              sudo -Eu builder mkdir -p "$destdir"
-              sudo -Eu builder cp "$srcfile" "$destdir/template"
+            echo "Building package: $pkg"
 
-              cd void-packages
-              sudo -Eu builder xlint "$pkg" || exit 1
-              sudo -Eu builder ./xbps-src pkg -Q "$pkg" || exit 1
-              cd ..
-            done
+            sudo -Eu builder mkdir -p "$destdir"
+            sudo -Eu builder cp "$srcfile" "$destdir/template"
 
-            while IFS= read -r pkg; do
-              [ -z "$pkg" ] && continue
-              [[ "$pkg" =~ ^# ]] && continue
+            cd void-packages
+            sudo -Eu builder xlint "$pkg" || exit 1
+            sudo -Eu builder ./xbps-src pkg -Q "$pkg" || exit 1
+            cd ..
+          done
 
-              echo "Building package: $pkg"
-              sudo -Eu builder ./void-packages/xbps-src pkg -Q "$pkg"
-            done < extras.txt
-            
-            sudo -Eu builder find $(pwd)/void-packages/hostdir/binpkgs -type f -name '*.xbps' -exec mv {} ${REPOSITORY_DIR}/ \;
+          while IFS= read -r pkg; do
+            [ -z "$pkg" ] && continue
+            [[ "$pkg" =~ ^# ]] && continue
+
+            echo "Building package: $pkg"
+            sudo -Eu builder ./void-packages/xbps-src pkg -Q "$pkg"
+          done < extras.txt
+
+          sudo -Eu builder find $(pwd)/void-packages/hostdir/binpkgs -type f -name '*.xbps' -exec mv {} ${REPOSITORY_DIR}/ \;
 
       - name: Sign repository and packages
         run: |
           echo -n "${{ secrets.SIGNING_KEY }}" > private.pem
 
-          if ls ${REPOSITORY_DIR}/*.xbps >/dev/null 2>&1; then
-            xbps-rindex -a ${REPOSITORY_DIR}/*.xbps
-            xbps-rindex --sign \
-              --signedby "stefur <stefan@furne.net>" \
-              --privkey private.pem \
-              ${REPOSITORY_DIR}
-            for pkg in ${REPOSITORY_DIR}/*.xbps; do
-              xbps-rindex --privkey private.pem --sign-pkg "$pkg"
-            done
-          else
-            echo "No .xbps packages found in ${REPOSITORY_DIR}, skipping indexing."
-          fi
+          xbps-rindex -a ${REPOSITORY_DIR}/*.xbps
+          xbps-rindex --sign \
+            --signedby "stefur <stefan@furne.net>" \
+            --privkey private.pem \
+            ${REPOSITORY_DIR}
+          for pkg in ${REPOSITORY_DIR}/*.xbps; do
+            xbps-rindex --privkey private.pem --sign-pkg "$pkg"
+          done
 
       - name: Prepare artifacts
         run: |
-            mkdir -p artifacts
-            cp -r $(pwd)/${REPOSITORY_DIR}/* $(pwd)/artifacts/ || true
+          mkdir -p artifacts
+          cp -r $(pwd)/${REPOSITORY_DIR}/* $(pwd)/artifacts/ || true
 
       - name: Upload changed packages
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.REPOSITORY_DIR }}
-          path: artifacts/    
+          path: artifacts/
 
   merge:
     runs-on: ubuntu-latest
@@ -158,5 +154,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-         
-    
